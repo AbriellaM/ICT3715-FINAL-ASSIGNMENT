@@ -1,131 +1,178 @@
 <?php
-// Parent Login
-
 session_start();
-
-// Quick DB connect
-$db = new mysqli('127.0.0.1','root','','amandlahighschool_lockersystem');
-if ($db->connect_errno) die('Database connection failed');
-$db->set_charset('utf8mb4');
-
-// Escape helper for safe output
-function safe($txt) { return htmlspecialchars($txt ?? '', ENT_QUOTES, 'UTF-8'); }
-
-// Handle logout
-if (isset($_GET['logout'])) {
-    session_destroy();
-    header('Location: parents.php');
-    exit;
+$mysqli = new mysqli('127.0.0.1','root','','amandlahighschool_lockersystem');
+if ($mysqli->connect_error) {
+    die("DB connection failed: " . $mysqli->connect_error);
 }
 
-// Handle login
-$error = '';
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $email = trim($_POST['parent_email'] ?? '');
-    $pass  = $_POST['password'] ?? '';
+$msg = "";
 
-    $stmt = $db->prepare("SELECT * FROM parents WHERE ParentEmail = ? LIMIT 1");
-    $stmt->bind_param('s', $email);
-    $stmt->execute();
-    $parent = $stmt->get_result()->fetch_assoc();
-    $stmt->close();
+// ---------------- REGISTER ----------------
+if (isset($_POST['register'])) {
+    $parentId     = $_POST['parent_id'];
+    $parenttitle  = $_POST['parent_title'];
+    $name         = $_POST['name'];
+    $surname      = $_POST['surname'];
+    $email        = $_POST['email'];
+    $phone        = $_POST['phone'];
+    $home         = $_POST['home_address'];
+    $password     = $_POST['password'];
 
-    // Plain-text match for now — replace with password hashing later
-    if ($parent && $pass === $parent['Password']) {
-        $_SESSION['parent'] = $parent;
-        header('Location: parents.php');
-        exit;
+    if (!preg_match('/^\d{13}$/', $parentId)) {
+        $msg = "ParentID must be exactly 13 digits long.";
     } else {
-        $error = 'Invalid login.';
+       $hash = $password; // store as plain text
+        $sql = "INSERT INTO parents 
+                (ParentID, ParentTitle, ParentName, ParentSurname, ParentEmail, ParentHomeAddress, ParentPhoneNumber, Password) 
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
+        $stmt = $mysqli->prepare($sql);
+        $stmt->bind_param("isssssss", $parentId, $parenttitle, $name, $surname, $email, $home, $phone, $hash);
+        if ($stmt->execute()) {
+            $msg = "Parent registered successfully with ParentID: ".$parentId;
+        } else {
+            $msg = "Error: ".$stmt->error;
+        }
+        $stmt->close();
     }
 }
 
-$loggedIn = isset($_SESSION['parent']);
+// ---------------- LOGIN ----------------
+if (isset($_POST['login'])) {
+    $email = trim($_POST['email']);
+    $pass  = trim($_POST['password']);
+
+    // Select all the fields you need
+    $sql = "SELECT ParentID, ParentName, ParentSurname, ParentEmail, Password
+            FROM parents
+            WHERE ParentEmail=? AND Password=?";
+    $stmt = $mysqli->prepare($sql);
+    $stmt->bind_param("ss", $email, $pass);
+    $stmt->execute();
+    $result = $stmt->get_result();
+
+    if ($row = $result->fetch_assoc()) {
+        // Successful login: set session array
+        $_SESSION['parent'] = [
+            'ParentID'      => $row['ParentID'],
+            'ParentName'    => $row['ParentName'],
+            'ParentSurname' => $row['ParentSurname'],
+            'ParentEmail'   => $row['ParentEmail']
+        ];
+        header("Location: /amandla-lockersystem/parents/parents_dashboard.php");
+        exit;
+    } else {
+        $msg = "Invalid email or password.";
+    }
+
+    $stmt->close();
+}
 ?>
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Parent Login - Amandla Locker System</title>
-<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-<style>
-/* My styling of my page */
-body {
-  background: url('css/images/hallway.jpg') center/cover no-repeat fixed;
-  min-height: 100vh;
-}
-.glass-card {
-  background: rgba(255, 255, 255, 0.15);
-  border-radius: 16px;
-  padding: 2rem;
-  box-shadow: 0 6px 25px rgba(0,0,0,0.25);
+  <meta charset="utf-8">
+  <title>Parent Login</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <style>
+    body {
+      min-height: 100vh;
+      /* ✅ Corrected path to your image folder */
+      background: url('/amandla-lockersystem/css/images/hallway.jpg') center center / cover no-repeat fixed;
+      color: #fff;
+    }
+    .card-glass {
+      -webkit-backdrop-filter: blur(12px); /* ✅ Added prefix for browser support */
+      backdrop-filter: blur(12px);
+      background: rgba(255,255,255,0.25);
+      border: 1px solid rgba(255,255,255,0.18);
+      border-radius: 16px;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.15);
+    }
+    .navbar {
+  background: rgba(255, 255, 255, 0.15) !important;
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.3);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.25);
 }
-.btn-modern {
-  background: black;
-  color: white;
-  border: none;
-  padding: 0.75rem;
-  font-weight: 600;
-  border-radius: 50px;
-}
-.btn-modern:hover {
-  background: #333;
-}
-</style>
-</head>
-<body class="d-flex flex-column min-vh-100">
 
-<!-- Navbar -->
-<nav class="navbar navbar-expand-lg navbar-dark bg-dark">
-  <div class="container-fluid">
-    <a class="navbar-brand fw-bold" href="#">Amandla High School Locker System</a>
-    <ul class="navbar-nav ms-auto">
-      <li class="nav-item"><a class="nav-link" href="index.php">Home</a></li>
-      <li class="nav-item"><a class="nav-link" href="admin.php">Administrator</a></li>
-      <li class="nav-item"><a class="nav-link active" href="parents.php">Parents</a></li>
-    </ul>
+.navbar .nav-link {
+  position: relative;
+  text-decoration: none;
+}
+
+.navbar .nav-link::after {
+  content: "";
+  position: absolute;
+  width: 0;
+  height: 2px;
+  left: 0;
+  bottom: -4px;
+  background-color: black;
+  transition: width 0.3s ease;
+}
+
+.navbar .nav-link:hover::after,
+.navbar .nav-link.active::after {
+  width: 100%;
+}
+
+/* Glass Footer */
+    .glass-footer {
+      background: rgba(255, 255, 255, 0.2);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border-top: 1px solid rgba(255, 255, 255, 0.3);
+      box-shadow: 0 -4px 12px rgba(0,0,0,0.15);
+      color: #000;
+      font-weight: 500;
+    }
+
+  </style>
+</head>
+
+<body><nav class="navbar navbar-expand-lg glass-nav fixed-top">
+ <div class="container-fluid">
+    <a class="navbar-brand fw-bold text-dark" href="/amandla-lockersystem/index.php">Amandla High School Locker System</a>
+    <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav"
+      aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
+      <span class="navbar-toggler-icon"></span>
+    </button>
+    <div class="collapse navbar-collapse justify-content-end" id="navbarNav">
+      <ul class="navbar-nav">
+        <li class="nav-item">
+          <a class="nav-link text-dark fw-bold" href="/amandla-lockersystem/index.php">Home</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link text-dark fw-bold active" href="/amandla-lockersystem/admin/admin.php">Administrator</a>
+        </li>
+      </ul>
+    </div>
   </div>
 </nav>
-
-<!-- Main Content -->
-<div class="container my-auto">
-  <div class="row justify-content-center">
-    <div class="col-md-5">
-      <div class="glass-card">
-        <?php if ($error): ?>
-          <div class="alert alert-danger"><?= safe($error) ?></div>
-        <?php endif; ?>
-
-        <?php if (!$loggedIn): ?>
-          <h4 class="text-center fw-bold mb-4">Parent Login</h4>
-          <form method="post">
-            <div class="mb-3">
-              <label>Parent Email</label>
-              <input type="email" name="parent_email" class="form-control" required>
-            </div>
-            <div class="mb-3">
-              <label>Password</label>
-              <input type="password" name="password" class="form-control" required>
-            </div>
-            <button class="btn btn-modern w-100">Sign In</button>
-          </form>
-        <?php else: ?>
-          <h5 class="mb-3">Welcome, <?= safe($_SESSION['parent']['ParentName']) ?></h5>
-          <p class="text-muted">You are logged in as <?= safe($_SESSION['parent']['ParentEmail']) ?></p>
-          <a href="parents_dashboard.php" class="btn btn-success w-100 mb-2">Go to Dashboard</a>
-          <a href="parents.php?logout=1" class="btn btn-outline-dark w-100">Logout</a>
-        <?php endif; ?>
+<div class="container d-flex justify-content-center align-items-center" style="min-height:100vh;">
+  <div class="card card-glass p-4 col-md-5">
+    <h3 class="mb-3">Parent Login</h3>
+    <?php if ($msg): ?><div class="alert alert-danger"><?= $msg ?></div><?php endif; ?>
+    <form method="post">
+      <div class="mb-3">
+        <label class="form-label">Email</label>
+        <input type="email" name="email" class="form-control" required>
       </div>
-    </div>
+      <div class="mb-3">
+        <label class="form-label">Password</label>
+        <input type="password" name="password" class="form-control" required>
+      </div>
+      <button class="btn btn-dark w-100 text-white" name="login">Login</button>
+    </form>
+    <p class="mt-3">No account? <a href="/amandla-lockersystem/parents/parent_register.php" class="text-light">Register here</a></p>
   </div>
 </div>
 
-<footer class="text-center text-white-50 py-2 small">
-  &copy; <?= date('Y') ?> Amandla High School Locker System
+<!-- Footer -->
+<footer class="glass-footer text-center py-3 mt-auto">
+  &copy; <?= date('Y') ?> Amandla High School Locker System. All rights reserved.
 </footer>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
